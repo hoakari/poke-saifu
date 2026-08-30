@@ -27,6 +27,7 @@ except ImportError:
     BaseTk = tk.Tk
 
 from poke_saifu.parser import BattleParser
+from poke_saifu.taskbar import TaskbarProgress
 
 
 def get_asset_path(filename: str) -> Path:
@@ -61,6 +62,7 @@ class PokeSaifuApp(BaseTk):
         self._setup_styles()
 
         self.parser = BattleParser()
+        self.taskbar = TaskbarProgress()
         self.current_json: str = ""
         self.current_preview_frame: Optional[np.ndarray] = None
         self._preview_photo_image: Any = None
@@ -73,6 +75,18 @@ class PokeSaifuApp(BaseTk):
         self._pause_event.set()
 
         self._build_ui()
+
+    def _get_root_hwnd(self) -> Optional[int]:
+        """Get the root Windows HWND of the main window for taskbar integration."""
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            hwnd = self.winfo_id()
+            root_hwnd = ctypes.windll.user32.GetAncestor(hwnd, 2)  # GA_ROOT = 2
+            return root_hwnd if root_hwnd else hwnd
+        except Exception:
+            return None
 
     def _setup_window_icon(self):
         # 1. Windows taskbar icon fix: tell Windows this is a distinct app, not generic python.exe
@@ -400,6 +414,7 @@ class PokeSaifuApp(BaseTk):
             # Enter paused state
             self._pause_event.clear()
             self._is_paused = True
+            self.taskbar.set_paused(self._get_root_hwnd())
             self.btn_pause_resume.config(text="再開")
             self.status_label.config(text="一時中断中 (処理を一時停止しています)")
             self.time_info_label.config(text="[再開] を押すと続きから解析を再開します。[クリア] で初期状態に戻せます。")
@@ -407,6 +422,7 @@ class PokeSaifuApp(BaseTk):
             # Resume processing
             self._pause_event.set()
             self._is_paused = False
+            self.taskbar.set_resumed(self._get_root_hwnd())
             self.btn_pause_resume.config(text="中断")
             self.status_label.config(text="解析を再開しました...")
 
@@ -429,6 +445,7 @@ class PokeSaifuApp(BaseTk):
         self.time_info_label.config(text="")
         self.event_count_label.config(text="")
         self.progress_bar["value"] = 0
+        self.taskbar.clear(self._get_root_hwnd())
 
         self.current_json = ""
         self._set_preview_image(None)
@@ -491,6 +508,7 @@ class PokeSaifuApp(BaseTk):
         self.event_count_label.config(text="")
         self.time_info_label.config(text="")
         self.progress_bar["value"] = 0
+        self.taskbar.set_indeterminate(self._get_root_hwnd())
         self.text_area.delete("1.0", tk.END)
 
         def thread_target():
@@ -532,6 +550,7 @@ class PokeSaifuApp(BaseTk):
         self.event_count_label.config(text="")
         self.time_info_label.config(text="")
         self.progress_bar["value"] = 0
+        self.taskbar.set_indeterminate(self._get_root_hwnd())
         self.text_area.delete("1.0", tk.END)
 
         def thread_target():
@@ -559,6 +578,7 @@ class PokeSaifuApp(BaseTk):
             return
 
         self.progress_bar["value"] = val * 100
+        self.taskbar.set_progress(self._get_root_hwnd(), val, paused=self._is_paused)
         if isinstance(info, dict):
             # Real-time preview thumbnail update as soon as detected in video!
             preview_f = info.get("preview_frame")
@@ -617,6 +637,7 @@ class PokeSaifuApp(BaseTk):
 
         self.event_count_label.config(text=f"検出イベント数: {events_count} 件")
         self.progress_bar["value"] = 100
+        self.taskbar.clear(self._get_root_hwnd())
 
         self.btn_save.config(state="normal")
         self.btn_copy.config(state="normal")
@@ -629,6 +650,7 @@ class PokeSaifuApp(BaseTk):
         self.status_label.config(text="エラーが発生しました")
         self.time_info_label.config(text="")
         self.progress_bar["value"] = 0
+        self.taskbar.set_error(self._get_root_hwnd())
         messagebox.showerror("解析エラー", f"処理中にエラーが発生しました:\n\n{err_msg}")
 
     def _copy_to_clipboard(self):
