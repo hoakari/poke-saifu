@@ -238,5 +238,72 @@ def test_unicode_image_io(tmp_path):
     assert loaded.shape == (100, 100, 3)
 
 
+def test_extract_datetime_from_path_patterns():
+    from datetime import datetime
+    from poke_saifu.parser import extract_datetime_from_path
+
+    # Android screen recording formats
+    dt1 = extract_datetime_from_path("screen-20260831-222435-1788182376514.mp4")
+    assert dt1 == datetime(2026, 8, 31, 22, 24, 35)
+
+    dt2 = extract_datetime_from_path("Screenrecorder-2026-08-31-22-24-35.mp4")
+    assert dt2 == datetime(2026, 8, 31, 22, 24, 35)
+
+    dt3 = extract_datetime_from_path("Screen_Recording_20260831_222435.mp4")
+    assert dt3 == datetime(2026, 8, 31, 22, 24, 35)
+
+    dt4 = extract_datetime_from_path("Screenshot_20260831-222435.png")
+    assert dt4 == datetime(2026, 8, 31, 22, 24, 35)
+
+    # Nintendo Switch capture format (14-digit timestamp + sequence/hash)
+    dt5 = extract_datetime_from_path("2026083122243500-ABCDEF123456.mp4")
+    assert dt5 == datetime(2026, 8, 31, 22, 24, 35)
+
+    # General delimited formats
+    dt6 = extract_datetime_from_path("2026-08-31 22.24.35.mp4")
+    assert dt6 == datetime(2026, 8, 31, 22, 24, 35)
+
+    dt7 = extract_datetime_from_path("battle_2026-08-31_22-24-35.mov")
+    assert dt7 == datetime(2026, 8, 31, 22, 24, 35)
+
+    # Date-only formats
+    dt8 = extract_datetime_from_path("2026-08-31_battle.mp4")
+    assert dt8 == datetime(2026, 8, 31, 0, 0, 0)
+
+    dt9 = extract_datetime_from_path("20260831_battle.mp4")
+    assert dt9 == datetime(2026, 8, 31, 0, 0, 0)
+
+
+def test_extract_datetime_from_path_os_stat_and_fallback(tmp_path):
+    from datetime import datetime
+    from poke_saifu.parser import extract_datetime_from_path
+
+    # Fallback when file doesn't exist and filename has no date
+    fallback_dt = datetime(2025, 1, 1, 12, 0, 0)
+    dt_fallback = extract_datetime_from_path("undated_video.mp4", fallback_now=fallback_dt)
+    assert dt_fallback == fallback_dt
+
+    # When real file exists without date in name, should use stat metadata
+    test_file = tmp_path / "custom_recording.mp4"
+    test_file.write_text("dummy video content")
+    dt_stat = extract_datetime_from_path(test_file)
+    assert dt_stat.year >= 2020
+
+
+def test_battle_parser_uses_source_datetime(tmp_path):
+    import cv2
+    from poke_saifu.parser import BattleParser
+
+    img_path = str(tmp_path / "screen-20260831-222435-1788182376514.png")
+    cv2.imwrite(img_path, np.zeros((720, 1280, 3), dtype=np.uint8))
+
+    parser = BattleParser(ocr_processor=MockOCRProcessor([]))
+    json_str, default_filename, data, _ = parser.process_images([img_path])
+
+    assert data["date"] == "2026-08-31"
+    assert data["recorded_at"] == "2026-08-31 22:24:35"
+    assert default_filename.startswith("2026-08-31_vs_")
+
+
 
 

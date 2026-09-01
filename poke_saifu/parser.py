@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -169,6 +169,122 @@ def extract_opponent_name(events: List[Dict[str, Any]]) -> str:
                         return sanitized
 
     return "opponent"
+
+
+def extract_datetime_from_path(
+    file_path: Union[str, Path], fallback_now: Optional[datetime] = None
+) -> datetime:
+    """Extract datetime from file path using filename patterns or OS metadata.
+
+    Order of precedence:
+    1. 6-component datetime patterns in filename (Android screen recordings, Switch, OBS, etc.)
+    2. 3-component date patterns in filename (YYYY-MM-DD, YYYYMMDD)
+    3. OS file metadata (earliest valid timestamp between mtime, ctime, birthtime)
+    4. Fallback datetime (fallback_now or datetime.now())
+    """
+    path = Path(file_path)
+    stem = path.stem
+
+    # --- Step 1: Match 6-component datetime patterns (Year, Month, Day, Hour, Minute, Second) ---
+    # 1a. Android & standard delimited formats (e.g., 'screen-20260831-222435-1788182376514', '20260831_222435')
+    m = re.search(
+        r"(?:^|[^\d])(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[-_\sT]+([01]\d|2[0-3])([0-5]\d)([0-5]\d)(?:[^\d]|$)",
+        stem,
+    )
+    if m:
+        try:
+            return datetime(
+                int(m.group(1)),
+                int(m.group(2)),
+                int(m.group(3)),
+                int(m.group(4)),
+                int(m.group(5)),
+                int(m.group(6)),
+            )
+        except ValueError:
+            pass
+
+    # 1b. Fully hyphenated/dotted/spaced datetime (e.g., 'Screenrecorder-2026-08-31-22-24-35', '2026-08-31 22:24:35', '2026-08-31_22-24-35')
+    m = re.search(
+        r"(?:^|[^\d])(20\d{2})[-_.](0[1-9]|1[0-2])[-_.](0[1-9]|[12]\d|3[01])[-_\sT]+([01]\d|2[0-3])[-_.:]([0-5]\d)[-_.:]([0-5]\d)(?:[^\d]|$)",
+        stem,
+    )
+    if m:
+        try:
+            return datetime(
+                int(m.group(1)),
+                int(m.group(2)),
+                int(m.group(3)),
+                int(m.group(4)),
+                int(m.group(5)),
+                int(m.group(6)),
+            )
+        except ValueError:
+            pass
+
+    # 1c. Continuous 14-digit timestamp (e.g., Nintendo Switch '2026083122243500-...')
+    m = re.search(
+        r"(?:^|[^\d])(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])([0-5]\d)([0-5]\d)",
+        stem,
+    )
+    if m:
+        try:
+            return datetime(
+                int(m.group(1)),
+                int(m.group(2)),
+                int(m.group(3)),
+                int(m.group(4)),
+                int(m.group(5)),
+                int(m.group(6)),
+            )
+        except ValueError:
+            pass
+
+    # --- Step 2: Match 3-component date patterns (Year, Month, Day) ---
+    # 2a. Delimited date (e.g., '2026-08-31_battle', '2026.08.31', '2026_08_31')
+    m = re.search(
+        r"(?:^|[^\d])(20\d{2})[-_.](0[1-9]|1[0-2])[-_.](0[1-9]|[12]\d|3[01])(?:[^\d]|$)",
+        stem,
+    )
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+
+    # 2b. Compact 8-digit date (e.g., '20260831_battle')
+    m = re.search(
+        r"(?:^|[^\d])(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[^\d]|$)",
+        stem,
+    )
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+
+    # --- Step 3: OS file metadata (stat) ---
+    if path.exists() and path.is_file():
+        try:
+            stat = path.stat()
+            timestamps = []
+            if hasattr(stat, "st_mtime") and stat.st_mtime > 0:
+                timestamps.append(stat.st_mtime)
+            if hasattr(stat, "st_ctime") and stat.st_ctime > 0:
+                timestamps.append(stat.st_ctime)
+            if hasattr(stat, "st_birthtime") and stat.st_birthtime > 0:
+                timestamps.append(stat.st_birthtime)
+
+            if timestamps:
+                earliest_ts = min(timestamps)
+                dt = datetime.fromtimestamp(earliest_ts)
+                if 2000 <= dt.year <= 2099:
+                    return dt
+        except Exception:
+            pass
+
+    # --- Step 4: Fallback ---
+    return fallback_now if fallback_now is not None else datetime.now()
 
 
 class BattleParser:
@@ -404,12 +520,14 @@ class BattleParser:
         if opponent == "opponent" and inferred_opponent_from_preview:
             opponent = inferred_opponent_from_preview
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        default_filename = f"{today_str}_vs_{opponent}.json"
+        source_dt = extract_datetime_from_path(video_path)
+        date_str = source_dt.strftime("%Y-%m-%d")
+        default_filename = f"{date_str}_vs_{opponent}.json"
 
         battle_data: Dict[str, Any] = {
             "source": Path(video_path).name,
-            "date": today_str,
+            "date": date_str,
+            "recorded_at": source_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "opponent": opponent,
             "events_count": len(events),
             "events": events,
@@ -514,12 +632,15 @@ class BattleParser:
         if opponent == "opponent" and inferred_opponent_from_preview:
             opponent = inferred_opponent_from_preview
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        default_filename = f"{today_str}_vs_{opponent}.json"
+        first_img = image_paths[0] if image_paths else ""
+        source_dt = extract_datetime_from_path(first_img) if first_img else datetime.now()
+        date_str = source_dt.strftime("%Y-%m-%d")
+        default_filename = f"{date_str}_vs_{opponent}.json"
 
         battle_data: Dict[str, Any] = {
             "source": f"images_batch_{len(image_paths)}",
-            "date": today_str,
+            "date": date_str,
+            "recorded_at": source_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "opponent": opponent,
             "events_count": len(events),
             "events": events,

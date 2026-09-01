@@ -34,8 +34,10 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 
 ---
 
-## 📅 完了済みタスク (Done)
-
+- [x] **入力ファイル（Android画面録画・Switch等）の日時自動抽出＆スマートファイル命名 ([#14](https://github.com/hoakari/poke-saifu/issues/14))**
+  - Android録画形式（`screen-YYYYMMDD-HHMMSS-*.mp4` 等）やSwitch録画ファイル名からの日時自動パース
+  - OSメタデータ（`st_mtime` / `st_ctime`）からのフォールバック日時判定
+  - デフォルト保存ファイル名（`YYYY-MM-DD_vs_相手名.json`）およびJSONメタデータ（`"date"`, `"recorded_at"`）への自動反映
 - [x] **Windows タスクバー進捗表示 (`ITaskbarList3`)**
   - 解析中のリアルタイム進捗バー（緑）
   - 一時中断時のステータス表示（黄）
@@ -44,3 +46,4 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 - [x] **選出見せ合い画面 (6on6) 自動検出＆プレビュー・ペア保存機能**
 - [x] **動画・スクショ画像群の高速OCR解析＆JSON抽出**
 - [x] **ドラッグ＆ドロップ (DnD) 対応・GUIアプリ基盤**
+
