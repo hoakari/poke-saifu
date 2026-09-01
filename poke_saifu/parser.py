@@ -306,6 +306,27 @@ class BattleParser:
         self.roi_preview_center = roi_preview_center
         self.roi_preview_opponent = roi_preview_opponent
 
+    def _detect_team_preview(self, frame: np.ndarray) -> Tuple[bool, str]:
+        """Check if frame is 6on6 team preview screen and extract opponent name."""
+        crop_center = crop_by_ratio(frame, self.roi_preview_center)
+        mask_center = preprocess_and_remove_ruby(crop_center)
+        if is_likely_text_mask(mask_center, min_char_count=2, min_pixels=150):
+            center_res = self.ocr.extract_text_from_mask(mask_center)
+            center_text = center_res.get("text", "")
+            if any(kw in center_text for kw in ["選出", "選んで", "3匹", "戦う", "ポケモン", "ランク", "対戦", "制限時間", "選択"]):
+                inferred_opp = ""
+                crop_opp = crop_by_ratio(frame, self.roi_preview_opponent)
+                opp_mask = preprocess_and_remove_ruby(crop_opp)
+                if is_likely_text_mask(opp_mask, min_char_count=1, min_pixels=50):
+                    opp_res = self.ocr.extract_text_from_mask(opp_mask)
+                    opp_text = opp_res.get("text", "").strip()
+                    if opp_text and opp_text not in ["相手", "あいて", "つよさ", "表示"]:
+                        sanitized = re.sub(r'[\\/:*?"<>|]', "", opp_text)
+                        if sanitized:
+                            inferred_opp = sanitized
+                return True, inferred_opp
+        return False, ""
+
     def process_video(
         self,
         video_path: str,
@@ -338,6 +359,7 @@ class BattleParser:
         total_paused_duration = 0.0
         best_preview_frame: Optional[np.ndarray] = None
         inferred_opponent_from_preview: str = ""
+        first_event_time_sec: Optional[float] = None
         battle_started: bool = False
         battle_ended: bool = False
 
@@ -373,23 +395,11 @@ class BattleParser:
 
             # --- Detect 6on6 Team Preview Screen in first 35 seconds (checked only on full seconds) ---
             if time_sec <= 35.0 and best_preview_frame is None and (int(time_sec * 10) % 15 == 0):
-                crop_center = crop_by_ratio(frame, self.roi_preview_center)
-                mask_center = preprocess_and_remove_ruby(crop_center)
-                if is_likely_text_mask(mask_center, min_char_count=3, min_pixels=250):
-                    center_res = self.ocr.extract_text_from_mask(mask_center)
-                    center_text = center_res.get("text", "")
-                    if any(kw in center_text for kw in ["選出", "選んで", "3匹", "戦う", "ポケモン", "ランク"]):
-                        best_preview_frame = frame.copy()
-                        # Extract opponent trainer name from top-right badge
-                        crop_opp = crop_by_ratio(frame, self.roi_preview_opponent)
-                        opp_mask = preprocess_and_remove_ruby(crop_opp)
-                        if is_likely_text_mask(opp_mask, min_char_count=1, min_pixels=60):
-                            opp_res = self.ocr.extract_text_from_mask(opp_mask)
-                            opp_text = opp_res.get("text", "").strip()
-                            if opp_text and opp_text not in ["相手", "あいて", "つよさ", "表示"]:
-                                sanitized = re.sub(r'[\\/:*?"<>|]', "", opp_text)
-                                if sanitized:
-                                    inferred_opponent_from_preview = sanitized
+                is_preview, opp = self._detect_team_preview(frame)
+                if is_preview:
+                    best_preview_frame = frame.copy()
+                    if opp:
+                        inferred_opponent_from_preview = opp
 
             for ev_type, side, roi, state_key in targets:
                 # Check cancellation inside target loop
@@ -515,6 +525,78 @@ class BattleParser:
 
         cap.release()
 
+        # --- Retry Loop for Team Preview if not found during initial pass ---
+        # Search from start (0.0s) up to the first detected battle event (or fallback to 35.0s)
+        # Note: events / JSON data is NOT modified during this phase.
+        if best_preview_frame is None and not (cancel_event and cancel_event.is_set()):
+            scan_limit_sec = (
+                events[0]["time_sec"]
+                if events
+                else min(35.0, total_duration_sec)
+            )
+            scan_limit_sec = max(min(5.0, total_duration_sec), scan_limit_sec)
+            max_frame_idx = int(scan_limit_sec * fps)
+
+            # Retry up to 3 times with increasing sampling density
+            retry_intervals_sec = [0.5, 0.2, 0.05]
+            for attempt, interval_sec in enumerate(retry_intervals_sec, start=1):
+                if (cancel_event and cancel_event.is_set()) or best_preview_frame is not None:
+                    break
+
+                cap_retry = cv2.VideoCapture(video_path)
+                if not cap_retry.isOpened():
+                    break
+
+                retry_frame_interval = max(1, int(fps * interval_sec))
+                cur_frame_idx = 0
+
+                while cap_retry.isOpened() and cur_frame_idx <= max_frame_idx:
+                    if cancel_event and cancel_event.is_set():
+                        break
+                    if pause_event and not pause_event.is_set():
+                        while not pause_event.is_set():
+                            if cancel_event and cancel_event.is_set():
+                                break
+                            time.sleep(0.05)
+                        if cancel_event and cancel_event.is_set():
+                            break
+
+                    ret, frame = cap_retry.read()
+                    if not ret:
+                        break
+
+                    is_preview, opp = self._detect_team_preview(frame)
+                    if is_preview:
+                        best_preview_frame = frame.copy()
+                        if not inferred_opponent_from_preview and opp:
+                            inferred_opponent_from_preview = opp
+                        break
+
+                    # Skip to next frame sample
+                    cur_frame_idx += 1
+                    for _ in range(retry_frame_interval - 1):
+                        if cur_frame_idx > max_frame_idx:
+                            break
+                        if not cap_retry.grab():
+                            break
+                        cur_frame_idx += 1
+
+                cap_retry.release()
+
+                if progress_callback:
+                    retry_info = {
+                        "prog": 1.0,
+                        "video_time_str": format_seconds(scan_limit_sec),
+                        "video_duration_str": format_seconds(total_duration_sec),
+                        "elapsed_str": format_seconds(max(0.0, time.time() - start_real_time - total_paused_duration)),
+                        "eta_str": "00:00",
+                        "events_count": len(events),
+                        "has_preview": bool(best_preview_frame is not None),
+                        "preview_frame": best_preview_frame if best_preview_frame is not None else None,
+                        "retry_attempt": attempt,
+                    }
+                    progress_callback(1.0, retry_info)
+
         # Build metadata and final JSON
         opponent = extract_opponent_name(events)
         if opponent == "opponent" and inferred_opponent_from_preview:
@@ -576,22 +658,11 @@ class BattleParser:
 
             # Check if this static image is team preview screen
             if best_preview_frame is None:
-                crop_center = crop_by_ratio(frame, self.roi_preview_center)
-                mask_center = preprocess_and_remove_ruby(crop_center)
-                if is_likely_text_mask(mask_center, min_char_count=3, min_pixels=250):
-                    center_res = self.ocr.extract_text_from_mask(mask_center)
-                    center_text = center_res.get("text", "")
-                    if any(kw in center_text for kw in ["選出", "選んで", "3匹", "戦う", "ポケモン", "ランク"]):
-                        best_preview_frame = frame.copy()
-                        crop_opp = crop_by_ratio(frame, self.roi_preview_opponent)
-                        opp_mask = preprocess_and_remove_ruby(crop_opp)
-                        if is_likely_text_mask(opp_mask, min_char_count=1, min_pixels=60):
-                            opp_res = self.ocr.extract_text_from_mask(opp_mask)
-                            opp_text = opp_res.get("text", "").strip()
-                            if opp_text and opp_text not in ["相手", "あいて", "つよさ", "表示"]:
-                                sanitized = re.sub(r'[\\/:*?"<>|]', "", opp_text)
-                                if sanitized:
-                                    inferred_opponent_from_preview = sanitized
+                is_preview, opp = self._detect_team_preview(frame)
+                if is_preview:
+                    best_preview_frame = frame.copy()
+                    if opp:
+                        inferred_opponent_from_preview = opp
 
             timestamp_str = f"img_{idx + 1:03d}"
 

@@ -305,5 +305,141 @@ def test_battle_parser_uses_source_datetime(tmp_path):
     assert default_filename.startswith("2026-08-31_vs_")
 
 
+def test_team_preview_retry_loop(tmp_path):
+    """Test that team preview is retrieved during the retry phase if missed in initial pass, without modifying JSON events."""
+    import cv2
+    from poke_saifu.parser import BattleParser
+
+    video_path = str(tmp_path / "battle_retry_test.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = 10.0
+    out = cv2.VideoWriter(video_path, fourcc, fps, (1280, 720))
+
+    # Frame 0 to 4 (0.0s - 0.4s): Blank
+    blank_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for _ in range(5):
+        out.write(blank_frame)
+
+    # Frame 5 (0.5s): Team Preview screen
+    preview_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for offset in [0, 30, 60, 90]:
+        preview_frame[140:180, 480 + offset : 500 + offset] = [255, 255, 255]
+    for offset in [0, 25, 50]:
+        preview_frame[60:90, 940 + offset : 960 + offset] = [255, 255, 255]
+    out.write(preview_frame)
+
+    # Frame 6 to 9 (0.6s - 0.9s): Blank
+    for _ in range(4):
+        out.write(blank_frame)
+
+    # Frame 10 to 19 (1.0s - 1.9s): Battle start message
+    battle_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for offset in [0, 40, 80, 120]:
+        battle_frame[520:560, 250 + offset : 275 + offset] = [255, 255, 255]
+    for _ in range(10):
+        out.write(battle_frame)
+
+    out.release()
+
+    # In initial pass with sample_interval_sec=1.0:
+    # Samples at 0.0s (Frame 0: Blank) and 1.0s (Frame 10: Battle start)
+    # The preview screen at Frame 5 (0.5s) is missed during initial pass!
+    # Retry loop should scan from 0.0s to 1.0s (first event time) and successfully detect it.
+
+    class DynamicMockOCR(MockOCRProcessor):
+        def __init__(self):
+            super().__init__([])
+
+        def extract_text_from_mask(self, binary_mask: np.ndarray):
+            # If mask is in preview center ROI (288, 640)
+            if binary_mask.shape[1] <= 640:
+                return {"text": "戦うポケモンを 3匹 選出してください", "confidence": 0.98}
+            # If mask is in main message ROI (288, 1024)
+            return {"text": "ポケモントレーナーの シゲルが 勝負を しかけてきた！", "confidence": 0.95}
+
+    parser = BattleParser(ocr_processor=DynamicMockOCR())
+    json_str, filename, data, found_preview = parser.process_video(
+        video_path, sample_interval_sec=1.0
+    )
+
+    # Verify preview frame was successfully acquired via retry loop
+    assert found_preview is not None
+    assert data["has_preview_image"] is True
+    # Verify JSON events were NOT polluted or modified by the retry loop
+    assert data["events_count"] == 1
+    assert len(data["events"]) == 1
+    assert data["events"][0]["text"] == "ポケモントレーナーの シゲルが 勝負を しかけてきた！"
+    assert data["events"][0]["time_sec"] == 1.0
+
+
+def test_team_preview_retry_not_found(tmp_path):
+    """Test that if team preview is never found, parser finishes gracefully after 3 retry attempts."""
+    import cv2
+    from poke_saifu.parser import BattleParser
+
+    video_path = str(tmp_path / "battle_no_preview.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = 10.0
+    out = cv2.VideoWriter(video_path, fourcc, fps, (1280, 720))
+
+    # All frames are blank or simple messages
+    blank_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for _ in range(15):
+        out.write(blank_frame)
+    out.release()
+
+    parser = BattleParser(ocr_processor=MockOCRProcessor([]))
+    json_str, filename, data, found_preview = parser.process_video(video_path, sample_interval_sec=0.5)
+
+    assert found_preview is None
+    assert data["has_preview_image"] is False
+    assert data["events_count"] == 0
+
+
+def test_team_preview_retry_with_no_events(tmp_path):
+    """Test retry search when there are no battle events detected."""
+    import cv2
+    from poke_saifu.parser import BattleParser
+
+    video_path = str(tmp_path / "preview_only.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fps = 10.0
+    out = cv2.VideoWriter(video_path, fourcc, fps, (1280, 720))
+
+    # Frame 0 to 2: Blank
+    blank_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for _ in range(3):
+        out.write(blank_frame)
+
+    # Frame 3: Preview screen
+    preview_frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+    for offset in [0, 30, 60, 90]:
+        preview_frame[140:180, 480 + offset : 500 + offset] = [255, 255, 255]
+    out.write(preview_frame)
+
+    # Frame 4 to 10: Blank
+    for _ in range(7):
+        out.write(blank_frame)
+    out.release()
+
+    class PreviewOnlyMockOCR(MockOCRProcessor):
+        def __init__(self):
+            super().__init__([])
+
+        def extract_text_from_mask(self, binary_mask: np.ndarray):
+            if binary_mask.shape[1] <= 640:
+                return {"text": "戦うポケモンを 3匹 選出してください", "confidence": 0.98}
+            return {"text": "", "confidence": 0.0}
+
+    parser = BattleParser(ocr_processor=PreviewOnlyMockOCR())
+    json_str, filename, data, found_preview = parser.process_video(video_path, sample_interval_sec=1.0)
+
+    assert found_preview is not None
+    assert data["has_preview_image"] is True
+    assert data["events_count"] == 0
+
+
+
+
 
 
