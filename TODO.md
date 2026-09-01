@@ -29,6 +29,8 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 | [#11](https://github.com/hoakari/poke-saifu/issues/11) | [Feature] 解析完了時の指定フォルダへの自動保存（Auto-Save） | `feature` `ui` |
 | [#12](https://github.com/hoakari/poke-saifu/issues/12) | [CI/CD] GitHub Actions による Windows 用 exe の自動ビルド＆Releases 配布 | `feature` |
 | [#13](https://github.com/hoakari/poke-saifu/issues/13) | [Feature] GUIアプリ内での最新バージョン確認＆アップデート通知 | `feature` `ui` |
+| [#14](https://github.com/hoakari/poke-saifu/issues/14) | [Enhancement] 生成ファイル名およびJSONメタデータの日時を実行時ではなく入力動画の撮影/作成日時に準拠させる | `enhancement` |
+
 
 ---
 
