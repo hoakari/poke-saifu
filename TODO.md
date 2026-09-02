@@ -25,8 +25,6 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 | Issue | タイトル | ラベル |
 | :--- | :--- | :--- |
 | [#9](https://github.com/hoakari/poke-saifu/issues/9) | [Feature] 選出見せ合い画面（6on6）のOCR解析およびJSON構造化出力 | `feature` `ocr` |
-| [#10](https://github.com/hoakari/poke-saifu/issues/10) | [Feature] 複数動画のキュー登録・連続自動解析（バッチ処理・完了通知音） | `feature` `ui` |
-| [#11](https://github.com/hoakari/poke-saifu/issues/11) | [Feature] 解析完了時の指定フォルダへの自動保存（Auto-Save） | `feature` `ui` |
 | [#12](https://github.com/hoakari/poke-saifu/issues/12) | [CI/CD] GitHub Actions による Windows 用 exe の自動ビルド＆Releases 配布 | `feature` |
 | [#13](https://github.com/hoakari/poke-saifu/issues/13) | [Feature] GUIアプリ内での最新バージョン確認＆アップデート通知 | `feature` `ui` |
 
@@ -34,9 +32,16 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 
 ## 📅 完了済みタスク (Done)
 
+- [x] **複数動画のキュー登録・連続自動解析＆完了通知機能 ([#10](https://github.com/hoakari/poke-saifu/issues/10))**
+  - 複数動画の一括ドラッグ＆ドロップおよびファイル選択ダイアログからのキュー追加
+  - 右側スライド「📋 処理キュー」パネル（進捗表示、ドラッグ並び替え、個別削除、クリア）
+  - 1戦終了ごとの自動連続バッチ解析
+  - 解析完了時の通知音（SE）、Windowsトースト通知（対戦相手・イベント数表示）、タスクバー点滅通知
+- [x] **解析完了時の指定フォルダへの自動保存＆フォルダオープン ([#11](https://github.com/hoakari/poke-saifu/issues/11))**
+  - 解析完了時のJSON・選出見せ合い画像（`_preview.png`）の自動保存（保存先フォルダ指定・設定記憶対応）
+  - 「📁 保存フォルダを開く」ボタンによる出力先フォルダの即時表示
 - [x] **入力ファイル（Android画面録画・Switch等）の日時自動抽出＆スマートファイル命名 ([#14](https://github.com/hoakari/poke-saifu/issues/14))**
   - Android録画形式（`screen-YYYYMMDD-HHMMSS-*.mp4` 等）やSwitch録画ファイル名からの日時自動パース
-
   - OSメタデータ（`st_mtime` / `st_ctime`）からのフォールバック日時判定
   - デフォルト保存ファイル名（`YYYY-MM-DD_vs_相手名.json`）およびJSONメタデータ（`"date"`, `"recorded_at"`）への自動反映
 - [x] **Windows タスクバー進捗表示 (`ITaskbarList3`)**
