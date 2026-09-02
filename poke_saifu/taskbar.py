@@ -151,3 +151,34 @@ class TaskbarProgress:
     def clear(self, hwnd: Optional[int]) -> None:
         """Clear taskbar progress bar."""
         self.set_state(hwnd, self.TBPF_NOPROGRESS)
+
+    def flash(self, hwnd: Optional[int], count: int = 4) -> None:
+        """Flash the window caption and taskbar button to notify completion."""
+        if sys.platform != "win32" or not hwnd:
+            return
+        try:
+            import ctypes
+            from ctypes import Structure, c_uint, c_void_p, sizeof
+
+            class FLASHWINFO(Structure):
+                _fields_ = [
+                    ("cbSize", c_uint),
+                    ("hwnd", c_void_p),
+                    ("dwFlags", c_uint),
+                    ("uCount", c_uint),
+                    ("dwTimeout", c_uint),
+                ]
+
+            FLASHW_ALL = 0x00000003  # Flash both window caption and taskbar button
+            FLASHW_TIMERNOFG = 0x0000000C  # Flash continuously until window comes to foreground
+
+            finfo = FLASHWINFO()
+            finfo.cbSize = sizeof(FLASHWINFO)
+            finfo.hwnd = hwnd
+            finfo.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG
+            finfo.uCount = count
+            finfo.dwTimeout = 0
+
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(finfo))
+        except Exception:
+            pass
