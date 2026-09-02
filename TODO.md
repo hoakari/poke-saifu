@@ -30,25 +30,26 @@ Poke-Saifu の不具合修正・精度改善および機能拡張タスク一覧
 
 | Issue | タイトル | ラベル | 優先度 |
 | :--- | :--- | :--- | :--- |
-| [#9](https://github.com/hoakari/poke-saifu/issues/9) | [Pipeline/Feature] 特性「へんげんじざい」等のタイプ変化イベントの構造化出力 | `enhancement` `feature` | 中 |
-| [#10](https://github.com/hoakari/poke-saifu/issues/10) | [Vision/Feature] チームプレビュー画面（6on6）からの種族・性別・持ち物アイコンの自動メタデータ抽出 | `feature` `vision` `accuracy` | 中 |
+| [#9](https://github.com/hoakari/poke-saifu/issues/9) | [Feature] 選出見せ合い画面（6on6）のOCR解析およびJSON構造化出力 | `feature` `ocr` | 中 |
+| [#15](https://github.com/hoakari/poke-saifu/issues/15) | [Pipeline/Feature] 特性「へんげんじざい」等のタイプ変化イベントの構造化出力 | `enhancement` `feature` | 中 |
+| [#16](https://github.com/hoakari/poke-saifu/issues/16) | [Vision/Feature] チームプレビュー画面（6on6）からの種族・性別・持ち物アイコンの自動メタデータ抽出 | `feature` `vision` `accuracy` | 中 |
 | [#12](https://github.com/hoakari/poke-saifu/issues/12) | [CI/CD] GitHub Actions による Windows 用 exe の自動ビルド＆Releases 配布 | `feature` | 低 |
 | [#13](https://github.com/hoakari/poke-saifu/issues/13) | [Feature] GUIアプリ内での最新バージョン確認＆アップデート通知 | `feature` `ui` | 低 |
 
 ### 新機能詳細
-- **[#9](https://github.com/hoakari/poke-saifu/issues/9)**: マスカーニャやゲッコウガの「へんげんじざい」によるタイプ変化メッセージ（「○○タイプになった！」）を明確なステータス変更イベント（`type: status_change`, `detail: { type_to: "かくとう" }` 等）として構造化し、後続の弱点・耐性判定の文脈フラグとして保持できるようにする。
-- **[#10](https://github.com/hoakari/poke-saifu/issues/10)**: プレビュー画面のスクショ/特定フレームから、対戦相手の手持ち6匹の「種族名」「性別（♂/♀/無）」およびプレイヤー側の手持ちを抽出し、JSONのルート直下に `team_preview: { player: [...], opponent: [...] }` として初期出力する機能。
+- **[#15](https://github.com/hoakari/poke-saifu/issues/15)**: マスカーニャやゲッコウガの「へんげんじざい」によるタイプ変化メッセージ（「○○タイプになった！」）を明確なステータス変更イベント（`type: status_change`, `detail: { type_to: "かくとう" }` 等）として構造化し、後続の弱点・耐性判定の文脈フラグとして保持できるようにする。
+- **[#16](https://github.com/hoakari/poke-saifu/issues/16)**: プレビュー画面のスクショ/特定フレームから、対戦相手の手持ち6匹の「種族名」「性別（♂/♀/無）」およびプレイヤー側の手持ちを抽出し、JSONのルート直下に `team_preview: { player: [...], opponent: [...] }` として初期出力する機能。
 
 ---
 
 ## 📅 完了済みタスク (Done)
 
-- [x] **複数動画のキュー登録・連続自動解析＆完了通知機能**
+- [x] **複数動画のキュー登録・連続自動解析＆完了通知機能 ([#10](https://github.com/hoakari/poke-saifu/issues/10))**
   - 複数動画の一括ドラッグ＆ドロップおよびファイル選択ダイアログからのキュー追加
   - 右側スライド「📋 処理キュー」パネル（進捗表示、ドラッグ並び替え、個別削除、クリア）
   - 1戦終了ごとの自動連続バッチ解析
   - 解析完了時の通知音（SE）、Windowsトースト通知（対戦相手・イベント数表示）、タスクバー点滅通知
-- [x] **解析完了時の指定フォルダへの自動保存＆フォルダオープン**
+- [x] **解析完了時の指定フォルダへの自動保存＆フォルダオープン ([#11](https://github.com/hoakari/poke-saifu/issues/11))**
   - 解析完了時のJSON・選出見せ合い画像（`_preview.png`）の自動保存（保存先フォルダ指定・設定記憶対応）
   - 「📁 保存フォルダを開く」ボタンによる出力先フォルダの即時表示
 - [x] **入力ファイル（Android画面録画・Switch等）の日時自動抽出＆スマートファイル命名 ([#14](https://github.com/hoakari/poke-saifu/issues/14))**
